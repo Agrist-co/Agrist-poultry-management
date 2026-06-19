@@ -21,24 +21,28 @@ except locale.Error:
 # ページのレイアウト設定
 st.set_page_config(layout="wide", page_title="鶏舎飼料管理システム")
 
-# ==============================================================================
-# 🎯 Linux環境用日本語フォントのダウンロードと絶対パス固定
-# ==============================================================================
-FONT_PATH = "/tmp/ipaexg.ttf"
-if not os.path.exists(FONT_PATH):
-    try:
-        # Streamlit Cloud環境で最も文字幅が安定する「IPAexゴシック」を直接取得
-        import urllib.request
-        url = "https://github.com/orandataro/ipaexg-font/raw/master/ipaexg.ttf"
-        urllib.request.urlretrieve(url, FONT_PATH)
-    except Exception as e:
-        FONT_PATH = None
-
-# --- 📁 ディレクトリ管理 ---
-BASE_DIR = './鶏舎飼料管理データ/'
+# --- 📁 ディレクトリ管理（絶対パスをより安全に管理） ---
+BASE_DIR = os.path.abspath('./鶏舎飼料管理データ') + '/'
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 LATEST_SESSION_FILE = os.path.join(BASE_DIR, "latest_session.json")
+
+# ==============================================================================
+# 🎯 日本語フォントを「確実」に取得・確保する関数
+# ==============================================================================
+FONT_PATH = "/tmp/ipaexg.ttf"
+def ensure_japanese_font():
+    if not os.path.exists(FONT_PATH):
+        try:
+            import urllib.request
+            url = "https://github.com/orandataro/ipaexg-font/raw/master/ipaexg.ttf"
+            urllib.request.urlretrieve(url, FONT_PATH)
+        except:
+            pass
+    return FONT_PATH if os.path.exists(FONT_PATH) else None
+
+# 起動時にも一度フォントを確保しておく
+ensure_japanese_font()
 
 # ==============================================================================
 # Ross 308 標準指標データ
@@ -78,24 +82,29 @@ if "initialized" not in st.session_state:
             pass
     st.session_state.initialized = True
 
+# --- 📁 ディレクトリデータスキャン（読込不具合を修正） ---
 def scan_directory():
     data_tree = {}
-    if not os.path.exists(BASE_DIR): return data_tree
-    for farm in sorted(os.listdir(BASE_DIR)):
-        farm_path = os.path.join(BASE_DIR, farm)
-        if os.path.isdir(farm_path):
-            data_tree[farm] = {}
-            for house in sorted(os.listdir(farm_path)):
-                house_path = os.path.join(farm_path, house)
-                if os.path.isdir(house_path):
-                    data_tree[farm][house] = {}
-                    for tank in sorted(os.listdir(house_path)):
-                        tank_path = os.path.join(house_path, tank)
-                        if os.path.isdir(tank_path):
-                            data_tree[farm][house][tank] = []
-                            for f in sorted(os.listdir(tank_path)):
-                                if f.endswith('.json') and f != "latest_session.json":
-                                    data_tree[farm][house][tank].append(f.replace('.json', ''))
+    if not os.path.exists(BASE_DIR): 
+        return data_tree
+    try:
+        for farm in sorted(os.listdir(BASE_DIR)):
+            farm_path = os.path.join(BASE_DIR, farm)
+            if os.path.isdir(farm_path):
+                data_tree[farm] = {}
+                for house in sorted(os.listdir(farm_path)):
+                    house_path = os.path.join(farm_path, house)
+                    if os.path.isdir(house_path):
+                        data_tree[farm][house] = {}
+                        for tank in sorted(os.listdir(house_path)):
+                            tank_path = os.path.join(house_path, tank)
+                            if os.path.isdir(tank_path):
+                                data_tree[farm][house][tank] = []
+                                for f in sorted(os.listdir(tank_path)):
+                                    if f.endswith('.json') and f != "latest_session.json":
+                                        data_tree[farm][house][tank].append(f.replace('.json', ''))
+    except:
+        pass
     return data_tree
 
 def calculate_table_core(param_dict, rec_dict, adj_dict):
@@ -280,19 +289,25 @@ with main_tabs[0]:
 
     st.markdown("---")
     st.subheader("🔍 ステップ2：過去データの絞り込み読込・保存")
-    tree = scan_directory()
-    farms = list(tree.keys()) if tree else ["(保存データなし)"]
     
+    # リアルタイムフォルダスキャン
+    tree = scan_directory()
+    farms_list = list(tree.keys()) if tree else []
+    
+    if not farms_list:
+        farms_list = ["(保存データなし)"]
+        
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-    with col_s1: sel_farm = st.selectbox("農場選択:", farms)
+    with col_s1: 
+        sel_farm = st.selectbox("農場選択:", farms_list)
     with col_s2:
-        houses = list(tree[sel_farm].keys()) if sel_farm in tree else ["—"]
+        houses = list(tree[sel_farm].keys()) if (sel_farm in tree and tree[sel_farm]) else ["—"]
         sel_house = st.selectbox("鶏舎選択:", houses)
     with col_s3:
-        tanks = list(tree[sel_farm][sel_house].keys()) if sel_farm in tree and sel_house in tree[sel_farm] else ["—"]
+        tanks = list(tree[sel_farm][sel_house].keys()) if (sel_farm in tree and sel_house in tree[sel_farm] and tree[sel_farm][sel_house]) else ["—"]
         sel_tank = st.selectbox("タンク選択:", tanks)
     with col_s4:
-        dates = tree[sel_farm][sel_house][sel_tank] if sel_farm in tree and sel_house in tree[sel_farm] and sel_tank in tree[sel_farm][sel_house] else ["—"]
+        dates = tree[sel_farm][sel_house][sel_tank] if (sel_farm in tree and sel_house in tree[sel_farm] and sel_tank in tree[sel_farm][sel_house]) else ["—"]
         sel_date = st.selectbox("入雛日選択:", dates)
 
     col_btn1, col_btn2 = st.columns(2)
@@ -301,27 +316,38 @@ with main_tabs[0]:
             if sel_farm != "(保存データなし)" and sel_date != "—":
                 try:
                     filepath = os.path.join(BASE_DIR, sel_farm, sel_house, sel_tank, f"{sel_date}.json")
-                    with open(filepath, 'r', encoding='utf-8') as f: loaded = json.load(f)
+                    with open(filepath, 'r', encoding='utf-8') as f: 
+                        loaded = json.load(f)
                     st.session_state.current_records = {int(k): v for k, v in loaded["records"].items()}
                     st.session_state.current_adjustments = {int(k): v for k, v in loaded.get("adjustments", {}).items()}
-                    st.success("📂 選択された過去データを正常に展開しました。")
-                except Exception as e: st.error(f"⚠️ 読込失敗: {e}")
+                    st.success(f"📂 【{sel_farm} / {sel_house}】の過去データを正常に展開しました！")
+                    st.rerun()
+                except Exception as e: 
+                    st.error(f"⚠️ 読込失敗: {e}")
+            else:
+                st.warning("⚠️ 読み込むデータが選択されていません。")
+                
     with col_btn2:
         if st.button("💾 全体の状態をファイルへ保存", type="primary", key="save_btn"):
             try:
+                # 確実に物理フォルダ階層を作る
                 target_dir = os.path.join(BASE_DIR, farm_name, house_no, tank_no)
-                if not os.path.exists(target_dir): os.makedirs(target_dir)
+                os.makedirs(target_dir, exist_ok=True)
+                
                 filepath = os.path.join(target_dir, f"{start_date.strftime('%Y-%m-%d')}.json")
                 save_data = {
                     "farm_name": farm_name, "house_no": house_no, "tank_no": tank_no, "start_date": start_date.strftime('%Y-%m-%d'),
                     "birds": birds, "shipping_age": shipping_age, "tank_cap": tank_cap, "min_alert": min_alert, "first_qty": first_qty,
                     "std_qty": std_qty, "pre_limit": pre_limit, "mid_limit": mid_limit, "records": st.session_state.current_records, "adjustments": st.session_state.current_adjustments
                 }
-                with open(filepath, 'w', encoding='utf-8') as f: json.dump(save_data, f, ensure_ascii=False, indent=4)
-                with open(LATEST_SESSION_FILE, 'w', encoding='utf-8') as f: json.dump(save_data, f, ensure_ascii=False, indent=4)
-                st.success("💾 ファイルを保存し、自動復元用バックアップを更新しました。")
+                with open(filepath, 'w', encoding='utf-8') as f: 
+                    json.dump(save_data, f, ensure_ascii=False, indent=4)
+                with open(LATEST_SESSION_FILE, 'w', encoding='utf-8') as f: 
+                    json.dump(save_data, f, ensure_ascii=False, indent=4)
+                st.success(f"💾 「{farm_name}」のデータを正常に保存しました！")
                 st.rerun()
-            except Exception as e: st.error(f"⚠️ 保存失敗: {e}")
+            except Exception as e: 
+                st.error(f"⚠️ 保存失敗: {e}")
 
     params = {"birds": birds, "shipping_age": shipping_age, "tank_cap": tank_cap, "min_alert": min_alert, "std_qty": std_qty, "pre_limit": pre_limit, "mid_limit": mid_limit, "start_date": start_date, "first_qty": first_qty}
     df_result = calculate_table_core(params, st.session_state.current_records, st.session_state.current_adjustments)
@@ -369,17 +395,26 @@ with main_tabs[0]:
     st.dataframe(disp_df, use_container_width=True, height=500)
 
 # ------------------------------------------------------------------------------
-# 📸 タブ 2: 飼料発注（画像レンダリングのフォント処理を完全修正）
+# 📸 タブ 2: 飼料発注（画像生成ロジックのセーフガードを完全強化）
 # ------------------------------------------------------------------------------
 with main_tabs[1]:
     st.subheader("🚚 ２．飼料発注シミュレーション画像生成")
+    
+    # 最新状態の農場リストを取得
+    current_tree = scan_directory()
+    report_farms = list(current_tree.keys()) if current_tree else ["(保存データなし)"]
+    
     col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1: report_farm = st.selectbox("発注対象農場:", farms, key="report_farm")
-    with col_r2: report_start = st.date_input("検索開始日:", date(2026, 6, 1), format="YYYY/MM/DD")
-    with col_r3: report_end = st.date_input("検索終了日:", date(2026, 7, 31), format="YYYY/MM/DD")
+    with col_r1: 
+        report_farm = st.selectbox("発注対象農場:", report_farms, key="report_farm")
+    with col_r2: 
+        report_start = st.date_input("検索開始日:", date(2026, 6, 1), format="YYYY/MM/DD")
+    with col_r3: 
+        report_end = st.date_input("検索終了日:", date(2026, 7, 31), format="YYYY/MM/DD")
 
     if st.button("📸 飼料発注プレビュー画面を起動", type="primary", key="report_gen_btn"):
-        if report_farm == "(保存データなし)": st.error("⚠️ 農場が正しく選択されていません。")
+        if report_farm == "(保存データなし)": 
+            st.error("⚠️ 発注対象となる保存データ（農場）が存在しません。ステップ1, 2で一度保存を行ってください。")
         else:
             today_str = date.today().strftime('%Y年%m月%d日')
             W_DATE = 14; W_HOUSE = 12; W_TANK = 12; W_AGE = 10; W_NOTE = 44
@@ -425,19 +460,20 @@ with main_tabs[1]:
                 lines.append(f"|{pad_to_width(' 指定された期間内に納品予定のあるタンクはありませんでした（エサは十分足りています）。', TOTAL_WIDTH - 2, 'left')}|")
                 lines.append(SEP_LINE)
 
-            # 画像の作成（A4比率：1240 × 1754）
+            # 画像生成
             image = Image.new("RGB", (1240, 1754), "white")
             draw = ImageDraw.Draw(image)
             
-            # 🎯 ダウンロードした「IPAexゴシック」を画像生成へ直接適用
-            if FONT_PATH and os.path.exists(FONT_PATH):
-                font = ImageFont.truetype(FONT_PATH, 24)
+            # 🎯 描画する直前にフォントの存在チェックを強制実行（セーフガード）
+            valid_font_path = ensure_japanese_font()
+            if valid_font_path:
+                font = ImageFont.truetype(valid_font_path, 24)
             else:
                 font = ImageFont.load_default()
 
             for i, line_txt in enumerate(lines):
                 draw.text((50, 70 + (i * 34)), line_txt, fill="black", font=font)
                 
-            st.success("📸 A4高画質プレビュー画面を正常に生成しました！")
-            st.caption("💡 下の画像をそのままスマートフォンなら「長押し」、PCなら「右クリック」で保存して使用してください。")
+            st.success("📸 2枚目のレイアウト通りに日本語プレビュー画面を正常生成しました！")
+            st.caption("💡 下の画像をスマートフォンなら「長押し」、PCなら「右クリック」で保存して使用してください。")
             st.image(image, caption="配車発注依頼書 プレビュー", use_container_width=True)

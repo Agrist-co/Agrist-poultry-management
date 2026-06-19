@@ -5,8 +5,22 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta, date
 from PIL import Image, ImageDraw, ImageFont
+import locale
 
-# ページのレイアウト設定（画面を広く使う）
+# ==============================================================================
+# 🌐 サーバーの地域設定（ロケール）を強制的に日本語に設定
+# ==============================================================================
+try:
+    # Linuxサーバー（Streamlit Cloud）向けの設定
+    locale.setlocale(locale.LC_ALL, 'ja_JP.UTF-8')
+except locale.Error:
+    try:
+        # Windowsローカル環境向けの設定
+        locale.setlocale(locale.LC_ALL, 'Japanese_Japan.932')
+    except locale.Error:
+        pass # どちらも失敗した場合はエラーを出さずに進む
+
+# ページのレイアウト設定
 st.set_page_config(layout="wide", page_title="鶏舎飼料管理システム")
 
 # ==============================================================================
@@ -239,7 +253,7 @@ with main_tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
         farm_name = st.text_input("農場名:", "上川西農場")
-        start_date = st.date_input("入雛日:", date(2026, 6, 9),format="YYYY/MM/DD")
+        start_date = st.date_input("入雛日:", date(2026, 6, 9), format="YYYY/MM/DD")
         birds = st.number_input("入雛羽数(羽):", value=6600, step=100)
         shipping_age = st.number_input("出荷日齢:", value=46, max_value=56)
     with col2:
@@ -352,8 +366,8 @@ with main_tabs[1]:
     st.subheader("🚚 ２．飼料発注シミュレーション画像生成")
     col_r1, col_r2, col_r3 = st.columns(3)
     with col_r1: report_farm = st.selectbox("発注対象農場:", farms, key="report_farm")
-    with col_r2: report_start = st.date_input("検索開始日:", date(2026, 6, 1))
-    with col_r3: report_end = st.date_input("検索終了日:", date(2026, 7, 31))
+    with col_r2: report_start = st.date_input("検索開始日:", date(2026, 6, 1), format="YYYY/MM/DD")
+    with col_r3: report_end = st.date_input("検索終了日:", date(2026, 7, 31), format="YYYY/MM/DD")
 
     if st.button("📸 飼料発注プレビュー画面を起動", type="primary", key="report_gen_btn"):
         if report_farm == "(保存データなし)": st.error("⚠️ 農場が正しく選択されていません。")

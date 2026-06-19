@@ -21,14 +21,14 @@ except locale.Error:
 # ページのレイアウト設定
 st.set_page_config(layout="wide", page_title="鶏舎飼料管理システム")
 
-# --- 📁 ディレクトリ管理（絶対パスをより安全に管理） ---
+# --- 📁 ディレクトリ管理 ---
 BASE_DIR = os.path.abspath('./鶏舎飼料管理データ') + '/'
 if not os.path.exists(BASE_DIR):
     os.makedirs(BASE_DIR)
 LATEST_SESSION_FILE = os.path.join(BASE_DIR, "latest_session.json")
 
 # ==============================================================================
-# 🎯 日本語フォントを「確実」に取得・確保する関数
+# 🎯 日本語フォント確保関数
 # ==============================================================================
 FONT_PATH = "/tmp/ipaexg.ttf"
 def ensure_japanese_font():
@@ -41,7 +41,6 @@ def ensure_japanese_font():
             pass
     return FONT_PATH if os.path.exists(FONT_PATH) else None
 
-# 起動時にも一度フォントを確保しておく
 ensure_japanese_font()
 
 # ==============================================================================
@@ -65,12 +64,32 @@ ROSS308_STD = [
     (56, 4318, 1.793, 234)
 ]
 
-# --- 🔄 状態管理初期化 ---
+# ==============================================================================
+# 🔄 入力欄の初期値をセッション状態（記憶）へセット
+# ==============================================================================
+def init_field(key, default_value):
+    if key not in st.session_state:
+        st.session_state[key] = default_value
+
+init_field("v_farm_name", "上川西農場")
+init_field("v_start_date", date(2026, 6, 9))
+init_field("v_birds", 6600)
+init_field("v_shipping_age", 46)
+init_field("v_house_no", "A棟")
+init_field("v_tank_cap", 7000)
+init_field("v_min_alert", 500)
+init_field("v_first_qty", 5000)
+init_field("v_tank_no", "No.1")
+init_field("v_std_qty", 4000)
+init_field("v_pre_limit", 6000)
+init_field("v_mid_limit", 10000)
+
 if "current_records" not in st.session_state:
-    st.session_state.current_records = {0: {"delivered": 5000, "actual_tank": 5000, "type": "確定"}}
+    st.session_state.current_records = {0: {"delivered": st.session_state.v_first_qty, "actual_tank": st.session_state.v_first_qty, "type": "確定"}}
 if "current_adjustments" not in st.session_state:
     st.session_state.current_adjustments = {}
 
+# 最初の一回だけ、前回セッションがあれば自動復元
 if "initialized" not in st.session_state:
     if os.path.exists(LATEST_SESSION_FILE):
         try:
@@ -78,15 +97,19 @@ if "initialized" not in st.session_state:
                 loaded = json.load(f)
             st.session_state.current_records = {int(k): v for k, v in loaded["records"].items()}
             st.session_state.current_adjustments = {int(k): v for k, v in loaded.get("adjustments", {}).items()}
+            for k in loaded:
+                if f"v_{k}" in st.session_state:
+                    if k == "start_date":
+                        st.session_state[f"v_{k}"] = datetime.strptime(loaded[k], "%Y-%m-%d").date()
+                    else:
+                        st.session_state[f"v_{k}"] = loaded[k]
         except:
             pass
     st.session_state.initialized = True
 
-# --- 📁 ディレクトリデータスキャン（読込不具合を修正） ---
 def scan_directory():
     data_tree = {}
-    if not os.path.exists(BASE_DIR): 
-        return data_tree
+    if not os.path.exists(BASE_DIR): return data_tree
     try:
         for farm in sorted(os.listdir(BASE_DIR)):
             farm_path = os.path.join(BASE_DIR, farm)
@@ -233,7 +256,6 @@ def calculate_table_core(param_dict, rec_dict, adj_dict):
     df["event_notes"] = event_notes
     return df
 
-# 等幅表示用ヘルパー関数
 def get_east_asian_width(text):
     import unicodedata
     count = 0
@@ -256,31 +278,28 @@ def pad_to_width(text, target_width, align='left'):
 
 
 # ==============================================================================
-# 🧱 Streamlit 画面構成（タブシステム）
+# 🧱 UI構築（入力部品に完全に Session State キーを紐付け）
 # ==============================================================================
 main_tabs = st.tabs(["📋 1. 飼料計算シミュレーター", "📸 2. 飼料発注"])
 
-# ------------------------------------------------------------------------------
-# 📋 タブ 1: シミュレーター
-# ------------------------------------------------------------------------------
 with main_tabs[0]:
     st.subheader("📂 ステップ1：初期条件・環境設定")
     col1, col2, col3 = st.columns(3)
     with col1:
-        farm_name = st.text_input("農場名:", "上川西農場")
-        start_date = st.date_input("入雛日:", date(2026, 6, 9), format="YYYY/MM/DD")
-        birds = st.number_input("入雛羽数(羽):", value=6600, step=100)
-        shipping_age = st.number_input("出荷日齢:", value=46, max_value=56)
+        farm_name = st.text_input("農場名:", key="v_farm_name")
+        start_date = st.date_input("入雛日:", format="YYYY/MM/DD", key="v_start_date")
+        birds = st.number_input("入雛羽数(羽):", step=100, key="v_birds")
+        shipping_age = st.number_input("出荷日齢:", max_value=56, key="v_shipping_age")
     with col2:
-        house_no = st.text_input("鶏舎No./名:", "A棟")
-        tank_cap = st.number_input("タンク容量(kg):", value=7000, step=500)
-        min_alert = st.number_input("最低残量アラート(kg):", value=500, step=100)
-        first_qty = st.number_input("初回納品量(kg):", value=5000, step=500)
+        house_no = st.text_input("鶏舎No./名:", key="v_house_no")
+        tank_cap = st.number_input("タンク容量(kg):", step=500, key="v_tank_cap")
+        min_alert = st.number_input("最低残量アラート(kg):", step=100, key="v_min_alert")
+        first_qty = st.number_input("初回納品量(kg):", step=500, key="v_first_qty")
     with col3:
-        tank_no = st.text_input("タンクNo.:", "No.1")
-        std_qty = st.number_input("通常配送単位(kg):", value=4000, step=500)
-        pre_limit = st.number_input("前期飼料総量(kg):", value=6000, step=500)
-        mid_limit = st.number_input("中期飼料総量(kg):", value=10000, step=500)
+        tank_no = st.text_input("タンクNo.:", key="v_tank_no")
+        std_qty = st.number_input("通常配送単位(kg):", step=500, key="v_std_qty")
+        pre_limit = st.number_input("前期飼料総量(kg):", step=500, key="v_pre_limit")
+        mid_limit = st.number_input("中期飼料総量(kg):", step=500, key="v_mid_limit")
 
     if st.button("① 新規条件で台帳作成（全クリア）", type="primary"):
         st.session_state.current_records = {0: {"delivered": first_qty, "actual_tank": first_qty, "type": "確定"}}
@@ -289,17 +308,12 @@ with main_tabs[0]:
 
     st.markdown("---")
     st.subheader("🔍 ステップ2：過去データの絞り込み読込・保存")
-    
-    # リアルタイムフォルダスキャン
     tree = scan_directory()
     farms_list = list(tree.keys()) if tree else []
-    
-    if not farms_list:
-        farms_list = ["(保存データなし)"]
+    if not farms_list: farms_list = ["(保存データなし)"]
         
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-    with col_s1: 
-        sel_farm = st.selectbox("農場選択:", farms_list)
+    with col_s1: sel_farm = st.selectbox("農場選択:", farms_list)
     with col_s2:
         houses = list(tree[sel_farm].keys()) if (sel_farm in tree and tree[sel_farm]) else ["—"]
         sel_house = st.selectbox("鶏舎選択:", houses)
@@ -318,37 +332,47 @@ with main_tabs[0]:
                     filepath = os.path.join(BASE_DIR, sel_farm, sel_house, sel_tank, f"{sel_date}.json")
                     with open(filepath, 'r', encoding='utf-8') as f: 
                         loaded = json.load(f)
+                    
+                    # 🎯 【超重要修正】読み込んだ過去データをSession State側へ強制反映
+                    st.session_state.v_farm_name = loaded["farm_name"]
+                    st.session_state.v_house_no = loaded["house_no"]
+                    st.session_state.v_tank_no = loaded["tank_no"]
+                    st.session_state.v_start_date = datetime.strptime(loaded["start_date"], "%Y-%m-%d").date()
+                    st.session_state.v_birds = loaded["birds"]
+                    st.session_state.v_shipping_age = loaded["shipping_age"]
+                    st.session_state.v_tank_cap = loaded["tank_cap"]
+                    st.session_state.v_min_alert = loaded["min_alert"]
+                    st.session_state.v_first_qty = loaded["first_qty"]
+                    st.session_state.v_std_qty = loaded["std_qty"]
+                    st.session_state.v_pre_limit = loaded.get("pre_limit", 6000)
+                    st.session_state.v_mid_limit = loaded.get("mid_limit", 10000)
+                    
                     st.session_state.current_records = {int(k): v for k, v in loaded["records"].items()}
                     st.session_state.current_adjustments = {int(k): v for k, v in loaded.get("adjustments", {}).items()}
-                    st.success(f"📂 【{sel_farm} / {sel_house}】の過去データを正常に展開しました！")
-                    st.rerun()
-                except Exception as e: 
-                    st.error(f"⚠️ 読込失敗: {e}")
-            else:
-                st.warning("⚠️ 読み込むデータが選択されていません。")
+                    
+                    st.success(f"📂 【{sel_farm} / {sel_house} ({sel_date})】の過去データを完全展開しました！")
+                    st.rerun() # 画面全体の表示を一発で過去データに切り替えるためのリフレッシュ
+                except Exception as e: st.error(f"⚠️ 読込失敗: {e}")
+            else: st.warning("⚠️ 読み込むデータが選択されていません。")
                 
     with col_btn2:
         if st.button("💾 全体の状態をファイルへ保存", type="primary", key="save_btn"):
             try:
-                # 確実に物理フォルダ階層を作る
                 target_dir = os.path.join(BASE_DIR, farm_name, house_no, tank_no)
                 os.makedirs(target_dir, exist_ok=True)
-                
                 filepath = os.path.join(target_dir, f"{start_date.strftime('%Y-%m-%d')}.json")
                 save_data = {
                     "farm_name": farm_name, "house_no": house_no, "tank_no": tank_no, "start_date": start_date.strftime('%Y-%m-%d'),
                     "birds": birds, "shipping_age": shipping_age, "tank_cap": tank_cap, "min_alert": min_alert, "first_qty": first_qty,
                     "std_qty": std_qty, "pre_limit": pre_limit, "mid_limit": mid_limit, "records": st.session_state.current_records, "adjustments": st.session_state.current_adjustments
                 }
-                with open(filepath, 'w', encoding='utf-8') as f: 
-                    json.dump(save_data, f, ensure_ascii=False, indent=4)
-                with open(LATEST_SESSION_FILE, 'w', encoding='utf-8') as f: 
-                    json.dump(save_data, f, ensure_ascii=False, indent=4)
+                with open(filepath, 'w', encoding='utf-8') as f: json.dump(save_data, f, ensure_ascii=False, indent=4)
+                with open(LATEST_SESSION_FILE, 'w', encoding='utf-8') as f: json.dump(save_data, f, ensure_ascii=False, indent=4)
                 st.success(f"💾 「{farm_name}」のデータを正常に保存しました！")
                 st.rerun()
-            except Exception as e: 
-                st.error(f"⚠️ 保存失敗: {e}")
+            except Exception as e: st.error(f"⚠️ 保存失敗: {e}")
 
+    # 現在画面に表示されている(あるいは読み込まれた)値を元に台帳を計算
     params = {"birds": birds, "shipping_age": shipping_age, "tank_cap": tank_cap, "min_alert": min_alert, "std_qty": std_qty, "pre_limit": pre_limit, "mid_limit": mid_limit, "start_date": start_date, "first_qty": first_qty}
     df_result = calculate_table_core(params, st.session_state.current_records, st.session_state.current_adjustments)
 
@@ -394,27 +418,18 @@ with main_tabs[0]:
     disp_df["運行・予測備考"] = df_result["event_notes"]
     st.dataframe(disp_df, use_container_width=True, height=500)
 
-# ------------------------------------------------------------------------------
-# 📸 タブ 2: 飼料発注（画像生成ロジックのセーフガードを完全強化）
-# ------------------------------------------------------------------------------
 with main_tabs[1]:
     st.subheader("🚚 ２．飼料発注シミュレーション画像生成")
-    
-    # 最新状態の農場リストを取得
     current_tree = scan_directory()
     report_farms = list(current_tree.keys()) if current_tree else ["(保存データなし)"]
     
     col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1: 
-        report_farm = st.selectbox("発注対象農場:", report_farms, key="report_farm")
-    with col_r2: 
-        report_start = st.date_input("検索開始日:", date(2026, 6, 1), format="YYYY/MM/DD")
-    with col_r3: 
-        report_end = st.date_input("検索終了日:", date(2026, 7, 31), format="YYYY/MM/DD")
+    with col_r1: report_farm = st.selectbox("発注対象農場:", report_farms, key="report_farm")
+    with col_r2: report_start = st.date_input("検索開始日:", date(2026, 6, 1), format="YYYY/MM/DD")
+    with col_r3: report_end = st.date_input("検索終了日:", date(2026, 7, 31), format="YYYY/MM/DD")
 
     if st.button("📸 飼料発注プレビュー画面を起動", type="primary", key="report_gen_btn"):
-        if report_farm == "(保存データなし)": 
-            st.error("⚠️ 発注対象となる保存データ（農場）が存在しません。ステップ1, 2で一度保存を行ってください。")
+        if report_farm == "(保存データなし)": st.error("⚠️ 発注対象となる保存データが存在しません。")
         else:
             today_str = date.today().strftime('%Y年%m月%d日')
             W_DATE = 14; W_HOUSE = 12; W_TANK = 12; W_AGE = 10; W_NOTE = 44
@@ -460,20 +475,12 @@ with main_tabs[1]:
                 lines.append(f"|{pad_to_width(' 指定された期間内に納品予定のあるタンクはありませんでした（エサは十分足りています）。', TOTAL_WIDTH - 2, 'left')}|")
                 lines.append(SEP_LINE)
 
-            # 画像生成
             image = Image.new("RGB", (1240, 1754), "white")
             draw = ImageDraw.Draw(image)
-            
-            # 🎯 描画する直前にフォントの存在チェックを強制実行（セーフガード）
             valid_font_path = ensure_japanese_font()
-            if valid_font_path:
-                font = ImageFont.truetype(valid_font_path, 24)
-            else:
-                font = ImageFont.load_default()
-
+            if valid_font_path: font = ImageFont.truetype(valid_font_path, 24)
+            else: font = ImageFont.load_default()
             for i, line_txt in enumerate(lines):
                 draw.text((50, 70 + (i * 34)), line_txt, fill="black", font=font)
-                
-            st.success("📸 2枚目のレイアウト通りに日本語プレビュー画面を正常生成しました！")
-            st.caption("💡 下の画像をスマートフォンなら「長押し」、PCなら「右クリック」で保存して使用してください。")
+            st.success("📸 A4高画質プレビュー画面を正常生成しました！")
             st.image(image, caption="配車発注依頼書 プレビュー", use_container_width=True)

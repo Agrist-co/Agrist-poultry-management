@@ -11,29 +11,28 @@ import locale
 # 🌐 サーバーの地域設定（ロケール）を強制的に日本語に設定
 # ==============================================================================
 try:
-    # Linuxサーバー（Streamlit Cloud）向けの設定
     locale.setlocale(locale.LC_ALL, 'ja_JP.UTF-8')
 except locale.Error:
     try:
-        # Windowsローカル環境向けの設定
         locale.setlocale(locale.LC_ALL, 'Japanese_Japan.932')
     except locale.Error:
-        pass # どちらも失敗した場合はエラーを出さずに進む
+        pass
 
 # ページのレイアウト設定
 st.set_page_config(layout="wide", page_title="鶏舎飼料管理システム")
 
 # ==============================================================================
-# 🎯 Linux環境用フォントのセットアップ
+# 🎯 Linux環境用日本語フォントのダウンロードと絶対パス固定
 # ==============================================================================
-FONT_PATH = "/usr/share/fonts/truetype/vlgothic/VL-Gothic-Regular.ttf"
+FONT_PATH = "/tmp/ipaexg.ttf"
 if not os.path.exists(FONT_PATH):
     try:
-        os.system("apt-get -y install fonts-vlgothic > /dev/null 2>&1")
-    except:
-        pass
-if not os.path.exists(FONT_PATH):
-    FONT_PATH = None 
+        # Streamlit Cloud環境で最も文字幅が安定する「IPAexゴシック」を直接取得
+        import urllib.request
+        url = "https://github.com/orandataro/ipaexg-font/raw/master/ipaexg.ttf"
+        urllib.request.urlretrieve(url, FONT_PATH)
+    except Exception as e:
+        FONT_PATH = None
 
 # --- 📁 ディレクトリ管理 ---
 BASE_DIR = './鶏舎飼料管理データ/'
@@ -225,6 +224,7 @@ def calculate_table_core(param_dict, rec_dict, adj_dict):
     df["event_notes"] = event_notes
     return df
 
+# 等幅表示用ヘルパー関数
 def get_east_asian_width(text):
     import unicodedata
     count = 0
@@ -245,9 +245,15 @@ def pad_to_width(text, target_width, align='left'):
     elif align == 'right': return padding + text
     else: return text + padding
 
-# --- 🧱 UI 構築 ---
+
+# ==============================================================================
+# 🧱 Streamlit 画面構成（タブシステム）
+# ==============================================================================
 main_tabs = st.tabs(["📋 1. 飼料計算シミュレーター", "📸 2. 飼料発注"])
 
+# ------------------------------------------------------------------------------
+# 📋 タブ 1: シミュレーター
+# ------------------------------------------------------------------------------
 with main_tabs[0]:
     st.subheader("📂 ステップ1：初期条件・環境設定")
     col1, col2, col3 = st.columns(3)
@@ -362,6 +368,9 @@ with main_tabs[0]:
     disp_df["運行・予測備考"] = df_result["event_notes"]
     st.dataframe(disp_df, use_container_width=True, height=500)
 
+# ------------------------------------------------------------------------------
+# 📸 タブ 2: 飼料発注（画像レンダリングのフォント処理を完全修正）
+# ------------------------------------------------------------------------------
 with main_tabs[1]:
     st.subheader("🚚 ２．飼料発注シミュレーション画像生成")
     col_r1, col_r2, col_r3 = st.columns(3)
@@ -377,7 +386,7 @@ with main_tabs[1]:
             TOTAL_WIDTH = W_DATE + W_HOUSE + W_TANK + W_AGE + W_NOTE + 6
             lines = [
                 "+" + "-" * (TOTAL_WIDTH - 2) + "+", f"|{pad_to_width('【飼料 配車発注依頼書】', TOTAL_WIDTH - 2, 'center')}|", "+" + "-" * (TOTAL_WIDTH - 2) + "+",
-                f" 发信元：長門アグリスト", f" 対象農場：{report_farm}", f" レポート発注日：{today_str}", f" 対象期間：{report_start.strftime('%Y/%m/%d')} 〜 {report_end.strftime('%Y/%m/%d')}",
+                f" 発信元：長門アグリスト", f" 対象農場：{report_farm}", f" レポート発注日：{today_str}", f" 対象期間：{report_start.strftime('%Y/%m/%d')} 〜 {report_end.strftime('%Y/%m/%d')}",
                 "-" * TOTAL_WIDTH, " 下記の通り、指定期間内の飼料発注・配車を依頼いたします。ご確認のほどお願い致します。", "-" * TOTAL_WIDTH, ""
             ]
             SEP_LINE = "+" + "-" * W_DATE + "+" + "-" * W_HOUSE + "+" + "-" * W_TANK + "+" + "-" * W_AGE + "+" + "-" * W_NOTE + "+"
@@ -416,11 +425,19 @@ with main_tabs[1]:
                 lines.append(f"|{pad_to_width(' 指定された期間内に納品予定のあるタンクはありませんでした（エサは十分足りています）。', TOTAL_WIDTH - 2, 'left')}|")
                 lines.append(SEP_LINE)
 
+            # 画像の作成（A4比率：1240 × 1754）
             image = Image.new("RGB", (1240, 1754), "white")
             draw = ImageDraw.Draw(image)
-            try: font = ImageFont.truetype(FONT_PATH, 24)
-            except: font = ImageFont.load_default()
+            
+            # 🎯 ダウンロードした「IPAexゴシック」を画像生成へ直接適用
+            if FONT_PATH and os.path.exists(FONT_PATH):
+                font = ImageFont.truetype(FONT_PATH, 24)
+            else:
+                font = ImageFont.load_default()
+
             for i, line_txt in enumerate(lines):
                 draw.text((50, 70 + (i * 34)), line_txt, fill="black", font=font)
-            st.success("📸 A4高画質プレビュー画面を立ち上げました。長押しや右クリックで保存できます。")
+                
+            st.success("📸 A4高画質プレビュー画面を正常に生成しました！")
+            st.caption("💡 下の画像をそのままスマートフォンなら「長押し」、PCなら「右クリック」で保存して使用してください。")
             st.image(image, caption="配車発注依頼書 プレビュー", use_container_width=True)

@@ -239,7 +239,7 @@ with main_tabs[0]:
     col1, col2, col3 = st.columns(3)
     with col1:
         farm_name = st.text_input("農場名:", "上川西農場")
-        start_date = st.date_input("入雛日:", date(2026, 6, 9))
+        start_date = st.date_input("入雛日:", date(2026, 6, 9),format="YYYY/MM/DD")
         birds = st.number_input("入雛羽数(羽):", value=6600, step=100)
         shipping_age = st.number_input("出荷日齢:", value=46, max_value=56)
     with col2:
